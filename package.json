@@ -1,0 +1,47 @@
+{
+  "name": "opencode-go-quota-rotate",
+  "version": "0.1.0",
+  "description": "Quota-aware multi-account rotation for the OpenCode Go subscription. Monitors live per-account usage and fails over automatically when an account hits its quota.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "opencode-go-quota-rotate": "./dist/cli.cjs"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "package.json"
+  ],
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/index.js && esbuild src/cli.ts --bundle --platform=node --format=cjs --outfile=dist/cli.cjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/"
+  },
+  "keywords": [
+    "opencode",
+    "plugin",
+    "quota",
+    "rotation",
+    "auth",
+    "go"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@opencode-ai/plugin": "*"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "^1.18.23",
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.5.0"
+  }
+}
