@@ -28,19 +28,93 @@ The official Go subscription limits usage per key on rolling, weekly, and monthl
 
 ## Installation
 
-TBD — see [docs/architecture.md](docs/architecture.md) and [SESSION_RECORD.md](SESSION_RECORD.md) for the current implementation status.
+### 1. Build the plugin
+
+```sh
+git clone <this-repo-url>
+cd opencode-go-quota-rotate
+npm install
+npm run build   # produces dist/index.js (plugin) and dist/cli.cjs (CLI)
+```
+
+### 2. Register the plugin with OpenCode
+
+Add the project's absolute path to the `plugin` array in
+`~/.config/opencode/opencode.jsonc`:
+
+```jsonc
+{
+  "plugin": [
+    "/absolute/path/to/opencode-go-quota-rotate"
+  ]
+}
+```
+
+Restart OpenCode (CLI and desktop), then confirm the plugin is picked up:
+
+```sh
+opencode debug config   # the plugin path should appear in "plugin"
+```
+
+### 3. Prerequisite: an existing `opencode-go` credential
+
+OpenCode 1.18.x only consults a plugin's auth loader when a credential for
+that provider already exists. Make sure `~/.local/share/opencode/auth.json`
+contains an `opencode-go` entry (any valid Go API key, e.g. added via
+`opencode auth login`). The loader keeps this entry fresh on every session.
 
 ## Usage
 
-### Add accounts
+The plugin needs at least one enabled account. Add keys either with the CLI or
+through OpenCode's built-in auth flow (`/login` → `Add Go Account`).
 
-TBD
+### CLI
+
+```sh
+# From the plugin directory (or install globally with `npm i -g .`):
+node dist/cli.cjs add -k sk-xxxx -l "account 1"    # add an account
+node dist/cli.cjs list                             # list accounts (marks current)
+node dist/cli.cjs status                           # rotation position
+node dist/cli.cjs remove 2                         # remove by 1-based number
+node dist/cli.cjs quota                            # live rolling/weekly/monthly usage
+```
 
 ### Check quota
 
 ```
-opencode-go-quota-rotate quota
+node dist/cli.cjs quota
 ```
+
+Example output:
+
+```
+账号1 sk-LtMF...MpBC
+  rolling: 14% ok (resets 2026-08-26T11:10:18.330Z)
+  weekly: 100% rate-limited (resets 2026-08-31T00:00:00.330Z)
+  monthly: 77% ok (resets 2026-09-20T03:42:10.330Z)
+账号2 sk-zq0j...pAqm
+  rolling: 2% ok (resets 2026-08-26T14:41:01.115Z)
+  weekly: 1% ok (resets 2026-08-31T00:00:00.115Z)
+  monthly: 0% ok (resets 2026-09-25T06:29:26.115Z)
+```
+
+### How account selection works
+
+On every session the loader queries the OpenCode Go usage API
+(`GET https://opencode.ai/zen/go/v1/usage`, the same endpoint used by
+`@slkiser/opencode-quota`, so both can coexist) for each enabled key and
+scores them:
+
+- `score = weekly.percent * 10 + rolling.percent`
+- a rate-limited (or 100%) weekly window is heavily penalized
+  (`1000 + rolling.percent`)
+- the lowest score wins; ties break in rotation order
+- if the usage API is unreachable, selection falls back to plain round-robin
+
+Mid-session, if the active account returns HTTP 429 — or a 402/403/409/5xx
+whose body mentions rate limits, quota, or insufficient balance — the account
+is marked exhausted and the same request is retried with the next account.
+When every account is exhausted, a synthetic 429 is returned.
 
 ## Storage
 

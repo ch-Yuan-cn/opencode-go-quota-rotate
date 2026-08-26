@@ -24,7 +24,7 @@
   "scripts": {
     "build": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/index.js && esbuild src/cli.ts --bundle --platform=node --format=cjs --outfile=dist/cli.cjs",
     "typecheck": "tsc --noEmit",
-    "test": "node --test test/"
+    "test": "node --test"
   },
   "keywords": [
     "opencode",
@@ -43,5 +43,8 @@
     "@types/node": "^22.0.0",
     "esbuild": "^0.24.0",
     "typescript": "^5.5.0"
+  },
+  "dependencies": {
+    "commander": "^14.0.3"
   }
 }
