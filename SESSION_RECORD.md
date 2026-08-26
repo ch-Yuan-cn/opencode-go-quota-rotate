@@ -103,7 +103,11 @@ opencode-go-quota-rotate/
    - **failover 实测**：修复前的一次运行日志出现 `failover from:0 key:sk-LtMF status:429` → 账号1 周额度满触发 429，自动切到账号2 成功响应（无需手动改 key）；
    - **踩坑修复**：createRotatingFetch 的起始账号语义 —— 最初把 loader 选中的 index 当 lastIndex 传入，导致 fetch 从"下一个"账号开始（浪费一次请求）；已改为 startIndex 语义（从选中账号开始，failover 才轮转）。**新会话改动 fetch 时注意该语义**。
 6. ✅ git 两次提交 + README 安装/使用章节完成。
-7. ⬜ 开源发布准备（可选）：GitHub 仓库创建、README 徽章、发布 npm（gh 已认证 ch-Yuan-cn 可用）。
+7. ⬜ 开源发布准备（部分完成，npm 发布跳过）：
+   - ✅ GitHub 仓库已创建并推送（https://github.com/ch-Yuan-cn/opencode-go-quota-rotate，public，SSH 远端，main 分支 5 个提交）；CI 两次运行 success。
+   - ✅ README 徽章（CI/License）、真实 clone URL、package.json 的 repository/homepage/bugs 字段已添加（提交 afe34ee）。
+   - ⬜ **npm 发布未做**：本机无 npm 账号（`npm whoami` → ENEEDAUTH），且注册必须走网页 https://www.npmjs.com/signup，当前网络被 Cloudflare 风控（curl 也 403；registry API 正常，`npm ping` → PONG）。用户决定先跳过。
+   - **补做步骤（网络环境允许时）**：换网络（手机热点）访问 npmjs.com 注册账号 → 本机 `npm login --auth-type=legacy`（纯命令行，绕开网页）→ `npm publish`。包名 `opencode-go-quota-rotate` 已验证未被占用。
 
 ## 六、验证技巧（本次会话实测有效，省坑）
 
