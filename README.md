@@ -1,5 +1,8 @@
 # opencode-go-quota-rotate
 
+[![CI](https://github.com/ch-Yuan-cn/opencode-go-quota-rotate/actions/workflows/ci.yml/badge.svg)](https://github.com/ch-Yuan-cn/opencode-go-quota-rotate/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Quota-aware multi-account rotation for the [OpenCode](https://opencode.ai) Go subscription.
 
 Run multiple OpenCode Go API keys side by side. On every session the plugin queries each account's live usage quota and picks the account with the most remaining capacity. When the active account hits its quota mid-session — HTTP 429, rate limits, or quota/balance errors — the plugin fails over to the next account automatically.
@@ -31,7 +34,7 @@ The official Go subscription limits usage per key on rolling, weekly, and monthl
 ### 1. Build the plugin
 
 ```sh
-git clone <this-repo-url>
+git clone https://github.com/ch-Yuan-cn/opencode-go-quota-rotate.git
 cd opencode-go-quota-rotate
 npm install
 npm run build   # produces dist/index.js (plugin) and dist/cli.cjs (CLI)

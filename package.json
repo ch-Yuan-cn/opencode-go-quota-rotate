@@ -46,5 +46,13 @@
   },
   "dependencies": {
     "commander": "^14.0.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ch-Yuan-cn/opencode-go-quota-rotate.git"
+  },
+  "homepage": "https://github.com/ch-Yuan-cn/opencode-go-quota-rotate",
+  "bugs": {
+    "url": "https://github.com/ch-Yuan-cn/opencode-go-quota-rotate/issues"
   }
 }
