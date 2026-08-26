@@ -74,32 +74,36 @@ opencode-go-quota-rotate/
 4. **auth.json 前提**：`~/.local/share/opencode/auth.json` 需有 `opencode-go` 条目（当前已有 = 账号2 key），否则 loader 不被调用。loader 每次运行会通过 auth.set 更新它。
 5. **CLI 构建为 CJS**（`dist/cli.cjs`），插件入口构建为 ESM（`dist/index.js`），用 esbuild，无需 bun（本机无 bun）。
 
-### 已就位的文件与状态
-- 已写：`package.json`、`tsconfig.json`、`.gitignore`、`LICENSE`、`README.md`、`docs/architecture.md`、`.github/workflows/ci.yml`、`src/types.ts`（完整）、其余 `src/*.ts`（含 TODO 与设计注释的骨架）、`test/README.md`。
-- **未写**：src 各模块的实现、测试用例。git 仓库尚未初始化（新会话可 `git init` + 首次提交）。
+### 已就位的文件与状态（2026-08-26 更新：实现已完成）
+- **已全部实现并验证**：`src/` 全部 8 个模块（logger/storage/quota/rotate/fetch/index/cli/types）、`test/` 4 个测试文件（33 用例全绿）、README 安装/使用章节、package-lock.json。
+- **git**：仓库已 init（main 分支），已有 2 个提交：`08c5568`（骨架）、`076162f`（实现）。本地 git identity = ch-Yuan-cn。
+- 构建产物：`dist/index.js`（ESM 插件入口）+ `dist/cli.cjs`（CJS CLI）。
+- **已安装到 opencode**：`opencode.jsonc` 中 go-multi-auth 条目已替换为本插件路径（原文件备份为 `opencode.jsonc.bak.20260826182802`），`opencode debug config` 可见。
+- 端到端验证结果见"五、TODO 执行记录"。
 
 ## 四、环境事实（本机现状）
 
 - opencode CLI 1.18.23：`~/.local/bin/opencode`；桌面端 1.18.23：`/Applications/OpenCode.app`（常驻运行）。
-- 全局配置：`~/.config/opencode/opencode.jsonc`（plugin 列表含 `/Users/ych/.config/opencode/plugins/opencode-go-multi-auth` 及其他插件；provider 声明 `opencode-go: {}`）。注意：**opencode.json 与 opencode.jsonc 并存时，plugin 数组是后写覆盖（mergeDeep），条目必须写在 jsonc 里**。
-- auth.json：`~/.local/share/opencode/auth.json`，当前 `opencode-go`=账号2 key、`opencode`=账号1 key。
+- 全局配置：`~/.config/opencode/opencode.jsonc`（plugin 列表**首位已是本插件路径** `/Volumes/Yuan SSD/yuan_works/opencode-go-quota-rotate`；go-multi-auth 已移除，原文件备份 `opencode.jsonc.bak.20260826182802`；provider 声明 `opencode-go: {}`）。注意：**opencode.json 与 opencode.jsonc 并存时，plugin 数组是后写覆盖（mergeDeep），条目必须写在 jsonc 里**。
+- auth.json：`~/.local/share/opencode/auth.json`，当前仅剩 `opencode-go`=账号2 key（`opencode` 条目已被桌面端清理）。门控前提满足。
 - 账号文件：`~/.config/opencode/opencode-go-accounts.json`（账号1 `sk-LtMF2vH...`、账号2 `sk-zq0jx...`，均有 enabled）。
 - 现有 go-multi-auth 插件（本地安装、对付费请求无效）：`~/.config/opencode/plugins/opencode-go-multi-auth`（含已构建 dist 和 CLI `dist/cli.cjs`，可参考其 storage/logger/CLI 写法）。
 - 工具：node 22（`/opt/homebrew/bin/node`）、npm 10.9.4、无 bun。esbuild 通过 `npx esbuild` 或项目 devDependency 使用。
 - 本机 GitHub CLI 已认证（账号 `ch-Yuan-cn`，scopes 含 repo），发布/提 issue 可用 `gh`。
 
-## 五、新会话 TODO（按顺序）
+## 五、TODO 执行记录（2026-08-26 已全部完成 1-6，7 可选未做）
 
-1. 实现 `src/` 各模块（storage → quota → rotate → fetch → index → cli → logger）。
-2. 编写单元测试（quota 解析、选号评分、fetch failover 模拟；`node --test`）。
-3. `npm install && npm run typecheck && npm test && npm run build`。
-4. 安装到 opencode：把 `opencode.jsonc` 里 go-multi-auth 条目替换为本插件路径（`/Volumes/Yuan SSD/yuan_works/opencode-go-quota-rotate`），验证 `opencode debug config` 出现该插件。
-5. 端到端验证：
-   - `opencode run "hi" --model opencode-go/mimo-v2.5` → 查插件日志 `loader active`（应选账号2，因账号1 周额度已满）；
-   - 插桩验证 fetch 被调用（在 fetch 里写日志文件）；
-   - 额度切换：可临时把账号2 的 key 换掉/禁用模拟额度用尽，验证 failover。
-6. git init + 首次提交；完善 README（安装/使用章节目前是 TBD）。
-7. 开源发布准备（可选）：GitHub 仓库创建、README 徽章、发布 npm 等。
+1. ✅ 实现 `src/` 全部模块。
+2. ✅ 单元测试 33 个（quota/rotate/fetch/storage），`node --test` 全绿。
+3. ✅ `npm run typecheck` + `npm test`（33/33）+ `npm run build` 全部通过。
+4. ✅ `opencode.jsonc` 替换插件条目（备份已留），`opencode debug config` 确认插件加载。
+5. ✅ 端到端验证（实测记录）：
+   - `opencode run "hi" --model opencode-go/mimo-v2.5` → 日志 `loader active` account=账号2 index=1 weeklyPercent=1（额度感知选号正确）；
+   - 插桩验证 fetch 被调用：日志出现 `fetch call` url=chat/completions key=sk-zq0j...（包装器完全控制 Authorization 头；账号1 的 key 不在 auth.json，能注入说明 fetch 包装器生效）；
+   - **failover 实测**：修复前的一次运行日志出现 `failover from:0 key:sk-LtMF status:429` → 账号1 周额度满触发 429，自动切到账号2 成功响应（无需手动改 key）；
+   - **踩坑修复**：createRotatingFetch 的起始账号语义 —— 最初把 loader 选中的 index 当 lastIndex 传入，导致 fetch 从"下一个"账号开始（浪费一次请求）；已改为 startIndex 语义（从选中账号开始，failover 才轮转）。**新会话改动 fetch 时注意该语义**。
+6. ✅ git 两次提交 + README 安装/使用章节完成。
+7. ⬜ 开源发布准备（可选）：GitHub 仓库创建、README 徽章、发布 npm（gh 已认证 ch-Yuan-cn 可用）。
 
 ## 六、验证技巧（本次会话实测有效，省坑）
 
