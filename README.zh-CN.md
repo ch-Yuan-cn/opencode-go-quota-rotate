@@ -83,18 +83,30 @@ OpenCode 1.18.x 有一个坑：**auth.json 里必须已经存在 `opencode-go` �
 node dist/cli.cjs add -k sk-xxxx -l "账号1"   # 添加账号，-l 是可选备注名
 node dist/cli.cjs list                        # 列出所有账号（标出当前使用的）
 node dist/cli.cjs status                      # 查看轮换位置
-node dist/cli.cjs remove 2                    # 按编号删除账号（从 1 开始数）
+node dist/cli.cjs remove 2                    # 按编号删除账号（会先确认）
+node dist/cli.cjs remove 2 --yes              # ……跳过确认（脚本里用）
 node dist/cli.cjs quota                       # 查看每个账号的实时额度
 ```
+
+`remove` 在真正删除前会先确认，并把要删的账号报给你看：
+
+```
+About to remove:
+  #2  account 2  sk-brav...c3d4  [enabled]
+
+Remove this account? [y/N]
+```
+
+只有 `y` 或 `yes` 才会执行——直接回车、其它任何输入、以及被中断的读取（Ctrl+D）都按取消处理，所以误敲一个键不会删掉账号。在**非交互**环境（管道、CI、后台）下命令会直接拒绝并返回 1，而不是去读一个没人能回答的提示；这类场景请加 `--yes`。
 
 ### 查看额度示例
 
 ```
-账号1 sk-LtMF...MpBC
+账号1 sk-brav...c3d4
   rolling: 14% ok (resets 2026-08-26T11:10:18.330Z)
   weekly: 100% rate-limited (resets 2026-08-31T00:00:00.330Z)
   monthly: 77% ok (resets 2026-09-20T03:42:10.330Z)
-账号2 sk-zq0j...pAqm
+账号2 sk-brav...c3d4
   rolling: 2% ok (resets 2026-08-26T14:41:01.115Z)
   weekly: 1% ok (resets 2026-08-31T00:00:00.115Z)
   monthly: 0% ok (resets 2026-09-25T06:29:26.115Z)

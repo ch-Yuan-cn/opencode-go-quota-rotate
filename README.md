@@ -80,9 +80,25 @@ through OpenCode's built-in auth flow (`/login` → `Add Go Account`).
 node dist/cli.cjs add -k sk-xxxx -l "account 1"    # add an account
 node dist/cli.cjs list                             # list accounts (marks current)
 node dist/cli.cjs status                           # rotation position
-node dist/cli.cjs remove 2                         # remove by 1-based number
+node dist/cli.cjs remove 2                         # remove by 1-based number (asks first)
+node dist/cli.cjs remove 2 --yes                   # ...skip the confirmation (for scripts)
 node dist/cli.cjs quota                            # live rolling/weekly/monthly usage
 ```
+
+`remove` asks for confirmation before deleting anything, naming the account it is
+about to drop:
+
+```
+About to remove:
+  #2  account 2  sk-brav...c3d4  [enabled]
+
+Remove this account? [y/N]
+```
+
+Only `y` or `yes` proceeds — a bare Enter, anything else, or an interrupted read
+(Ctrl+D) cancels, so a stray keystroke cannot delete an account. In a
+non-interactive shell (piped, CI, background) the command refuses and exits 1
+rather than reading an answer nobody can give; pass `--yes` there.
 
 ### Check quota
 
@@ -93,11 +109,11 @@ node dist/cli.cjs quota
 Example output:
 
 ```
-账号1 sk-LtMF...MpBC
+账号1 sk-brav...c3d4
   rolling: 14% ok (resets 2026-08-26T11:10:18.330Z)
   weekly: 100% rate-limited (resets 2026-08-31T00:00:00.330Z)
   monthly: 77% ok (resets 2026-09-20T03:42:10.330Z)
-账号2 sk-zq0j...pAqm
+账号2 sk-brav...c3d4
   rolling: 2% ok (resets 2026-08-26T14:41:01.115Z)
   weekly: 1% ok (resets 2026-08-31T00:00:00.115Z)
   monthly: 0% ok (resets 2026-09-25T06:29:26.115Z)

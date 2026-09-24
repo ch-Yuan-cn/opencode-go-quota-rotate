@@ -4,18 +4,15 @@ import { loadAccounts, saveAccounts, loadRotationState, saveRotationState } from
 import { queryQuota } from "./quota.ts"
 import type { QuotaInfo } from "./types.ts"
 import { log } from "./logger.ts"
+import { accountLabel, formatRemovalPrompt, maskKey } from "./display.ts"
+import { confirm } from "./confirm.ts"
 
 const program = new Command()
 
 program
   .name("opencode-go-quota-rotate")
   .description("Manage OpenCode Go multi-account quota rotation")
-  .version("0.2.0")
-
-function maskKey(key: string): string {
-  if (key.length <= 10) return key
-  return key.slice(0, 7) + "..." + key.slice(-4)
-}
+  .version("0.3.0")
 
 function windowLine(name: string, w: { status?: string; percent?: number; resetsAt?: string } | undefined): string {
   if (!w) return "  " + name + ": n/a"
@@ -35,7 +32,7 @@ program
     }
     for (let i = 0; i < data.accounts.length; i++) {
       const a = data.accounts[i]
-      const label = a.label || "Account " + (i + 1)
+      const label = accountLabel(a, i)
       const status = a.enabled ? "enabled" : "disabled"
       const mark = i === data.rotationIndex ? " <- current" : ""
       console.log("  " + (i + 1) + ". " + label + " [" + status + "] " + maskKey(a.apiKey) + mark)
@@ -69,22 +66,42 @@ program
 
 program
   .command("remove")
-  .description("Remove an account by number (1-based)")
+  .description("Remove an account by number (1-based), asking for confirmation first")
   .argument("<number>", "Account number to remove")
-  .action((numStr) => {
+  .option("-y, --yes", "Skip the confirmation prompt (for scripts)")
+  .action(async (numStr, opts) => {
     const num = Number.parseInt(numStr, 10) - 1
     const data = loadAccounts()
     if (Number.isNaN(num) || num < 0 || num >= data.accounts.length) {
       console.error("Error: invalid account number \"" + numStr + "\". Choose 1-" + data.accounts.length)
       process.exit(1)
     }
+
+    const target = data.accounts[num]
+    const label = accountLabel(target, num)
+
+    if (!opts.yes) {
+      // Fail closed when nobody can answer: a piped or backgrounded run must
+      // not delete an account on the strength of an unread prompt.
+      if (!process.stdin.isTTY) {
+        console.error(
+          "Error: refusing to remove an account without confirmation in a non-interactive shell.\n" +
+            "Re-run with --yes to confirm, or run this command in a terminal.",
+        )
+        process.exit(1)
+      }
+      if (!(await confirm(formatRemovalPrompt(target, num)))) {
+        console.log("Cancelled. Nothing was removed.")
+        return
+      }
+    }
+
     const removed = data.accounts.splice(num, 1)[0]
     if (data.rotationIndex >= data.accounts.length) {
       data.rotationIndex = Math.max(0, data.accounts.length - 1)
     }
     saveAccounts(data)
-    const label = removed.label || "Account " + (num + 1)
-    console.log("Removed: " + label)
+    console.log("Removed: " + accountLabel(removed, num) + " (#" + (num + 1) + ")")
     log("info", "remove", { label })
   })
 
