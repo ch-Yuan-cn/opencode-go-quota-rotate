@@ -21,13 +21,25 @@ export function isQuotaErrorStatus(status: number): boolean {
 }
 
 /**
+ * Statuses that mean "this key itself is no good" rather than "this key is out
+ * of quota". A revoked or invalid Go key answers 401 on both the usage and the
+ * inference endpoint (`{"error":{"message":"Upstream request failed: Invalid
+ * credential"}}`), so without this a dead key in the pool simply fails the
+ * request it was picked for instead of failing over to a live one.
+ */
+export function isCredentialRejectedStatus(status: number): boolean {
+  return status === 401
+}
+
+/**
  * Request-level rotating fetch with quota-aware failover.
  *
  * 1. Signs every request with the active account key (fully replaces the
  *    Authorization header).
- * 2. Fails over when the response is a 429, or a 402/403/409/5xx whose body
- *    matches QUOTA_ERROR_BODY. The account is marked exhausted and the same
- *    request is retried with the next enabled, non-exhausted account.
+ * 2. Fails over when the response is a 429, a 401 (key rejected/revoked), or a
+ *    402/403/409/5xx whose body matches QUOTA_ERROR_BODY. The account is marked
+ *    exhausted and the same request is retried with the next enabled,
+ *    non-exhausted account.
  * 3. When every account is exhausted, returns a synthetic 429 Response.
  * 4. Non-error responses are returned untouched (body never consumed).
  */
@@ -94,6 +106,10 @@ export function createRotatingFetch(
 
       if (response.status === 429) {
         // Rate limited — no need to read the body.
+        state.exhausted.add(current.index)
+      } else if (isCredentialRejectedStatus(response.status)) {
+        // Key revoked/invalid — no need to read the body either; the same key
+        // will keep being rejected, so retry with the next account.
         state.exhausted.add(current.index)
       } else if (isQuotaErrorStatus(response.status)) {
         // Only treat as exhausted when the body actually mentions quota/balance.

@@ -9,7 +9,9 @@ import type { GoAccount, QuotaInfo } from "./types.ts"
  *   weekly rate-limited (status "rate-limited" or percent >= 100):
  *     score = 1000 + rolling.percent  (heavy penalty so exhausted accounts sink)
  *   Lowest score wins; ties resolve in round-robin order after the last used
- *   index. If every quota query fails, fall back to plain round-robin.
+ *   index. An account whose quota query failed is **not scored at all** (its
+ *   usage is unknown, not zero) and is only reachable through the round-robin
+ *   fallback below, which applies when no account has a readable quota.
  */
 
 const CACHE_MS = 5 * 60 * 1000
@@ -30,9 +32,18 @@ export async function getQuotaCached(apiKey: string): Promise<QuotaInfo> {
   return fresh
 }
 
-/** Score one account; lower is better. */
+/**
+ * Score one account; lower is better.
+ *
+ * A failed quota lookup is **unknown**, not perfect. `queryQuota` returns a
+ * truthy `{ error, fetchedAt }` object, so guarding only on `!q` let a failed
+ * lookup fall through to the window reads below — every missing window then
+ * defaulted to 0 and the account scored 0, the best possible score. Verified
+ * live: a revoked key (usage API answers 401) won every rotation and got
+ * written into auth.json, so every request was signed with a dead key.
+ */
 export function scoreAccount(q: QuotaInfo | undefined): number {
-  if (!q) return Number.POSITIVE_INFINITY
+  if (!q || q.error) return Number.POSITIVE_INFINITY
   const rolling = q.rolling?.percent ?? 0
   const weekly = q.weekly?.percent ?? 0
   if (isWeeklyExhausted(q)) return 1000 + rolling
@@ -76,7 +87,12 @@ export async function pickAccount(
     let best: { account: GoAccount; index: number; quota?: QuotaInfo; reason: string } | null = null
     let bestScore = Number.POSITIVE_INFINITY
     for (const idx of rotated) {
-      const e = withQuota.find((x) => x.index === idx)!
+      // Only accounts with a readable quota are candidates. Accounts whose
+      // lookup failed still appear in `rotated` (that is the full enabled set,
+      // which fixes the rotation order) but are skipped here rather than scored
+      // as if they had no usage at all.
+      const e = known.find((x) => x.index === idx)
+      if (!e) continue
       const score = scoreAccount(e.quota)
       if (score < bestScore) {
         bestScore = score

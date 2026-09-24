@@ -117,3 +117,37 @@ test("failover persists across requests (exhausted account stays exhausted)", as
   assert.equal(calls.length, 3)
   assert.equal(calls[2].auth, "Bearer sk-f-two")
 })
+// --- 回归：401（key 被吊销）也要换号 -------------------------------------------
+// 实测：Go 对已吊销的 key 在推理端点返回 401 Invalid credential。
+// 旧实现的 isQuotaErrorStatus 不含 401，于是死 key 签名的那次请求直接失败。
+
+test("401 (invalid credential) fails over to the next account", async () => {
+  const { fn, calls } = mockBase(
+    resp(401, '{"error":{"type":"server_error","message":"Upstream request failed: Invalid credential"}}'),
+    resp(200, "from two"),
+  )
+  const { fetch } = createRotatingFetch(TWO, -1, fn)
+  const res = await fetch("https://api.example.com/v1/chat")
+  assert.equal(res.status, 200)
+  assert.equal(await res.text(), "from two")
+  assert.equal(calls.length, 2)
+  assert.equal(calls[0].auth, "Bearer sk-f-one")
+  assert.equal(calls[1].auth, "Bearer sk-f-two")
+})
+
+test("401 on every account ends as all-exhausted", async () => {
+  const { fn, calls } = mockBase(resp(401, "Invalid credential"), resp(401, "Invalid credential"))
+  const { fetch } = createRotatingFetch(TWO, -1, fn)
+  const res = await fetch("https://api.example.com/v1/chat")
+  assert.equal(res.status, 429)
+  assert.equal(calls.length, 2)
+})
+
+test("a dead key stays skipped on later requests", async () => {
+  const { fn, calls } = mockBase(resp(401, "Invalid credential"), resp(200, "ok"), resp(200, "ok again"))
+  const { fetch } = createRotatingFetch(TWO, -1, fn)
+  assert.equal((await fetch("https://api.example.com/v1/chat")).status, 200)
+  assert.equal((await fetch("https://api.example.com/v1/chat")).status, 200)
+  assert.equal(calls.length, 3)
+  assert.equal(calls[2].auth, "Bearer sk-f-two", "second request must not touch the dead key again")
+})

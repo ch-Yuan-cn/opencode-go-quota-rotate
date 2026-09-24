@@ -125,3 +125,46 @@ test("pickAccount throws NoEnabledAccounts when nothing is enabled", async () =>
     NoEnabledAccounts,
   )
 })
+
+// --- 回归：额度查询失败 ≠ 满分 -------------------------------------------------
+// 实测踩过：被吊销的 key 在 /usage 上返回 401，查询失败的对象是真值，
+// 旧实现把缺失窗口读成 0 → 得分 0（全场最优）→ 死 key 永远被选中。
+
+test("scoreAccount: errored quota lookup is unknown, not a perfect score", () => {
+  assert.equal(scoreAccount({ error: "HTTP 401", fetchedAt: 0 } as any), Number.POSITIVE_INFINITY)
+})
+
+test("pickAccount: never prefers an account whose quota lookup failed", async () => {
+  // A 的额度查询失败（旧实现得分 0，会赢），B 是正常的 weekly 1（得分 10）。
+  const restore = stubQuota({ "sk-err-a": { weekly: 0, fail: true }, "sk-err-b": { weekly: 1 } })
+  try {
+    const r = await pickAccount([account("sk-err-a"), account("sk-err-b")], -1)
+    assert.equal(r.index, 1, "must pick the account with a readable quota")
+    assert.equal(r.reason, "quota-aware")
+  } finally {
+    restore()
+  }
+})
+
+test("pickAccount: a fresh empty account beats an unreadable one", async () => {
+  // 现实场景：账号1 被吊销（查询失败），账号3 全新（monthly 0%、rolling 1 → 得分 1）。
+  // 旧实现选账号1（得分 0）；新实现必须选账号3。
+  const restore = stubQuota({ "sk-dead-a": { weekly: 0, fail: true }, "sk-fresh-c": { weekly: 0, rolling: 1 } })
+  try {
+    const r = await pickAccount([account("sk-dead-a"), account("sk-fresh-c")], 0)
+    assert.equal(r.index, 1, "a brand-new account must win over a revoked key")
+  } finally {
+    restore()
+  }
+})
+
+test("pickAccount: round-robin still applies when every lookup fails", async () => {
+  const restore = stubQuota({ "sk-all-a": { weekly: 0, fail: true }, "sk-all-b": { weekly: 0, fail: true } })
+  try {
+    const r = await pickAccount([account("sk-all-a"), account("sk-all-b")], 0)
+    assert.equal(r.index, 1)
+    assert.match(r.reason, /round-robin/)
+  } finally {
+    restore()
+  }
+})
