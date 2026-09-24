@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { scoreAccount, isWeeklyExhausted, pickAccount, NoEnabledAccounts } from "../src/rotate.ts"
+import { scoreAccount, isWeeklyExhausted, isAccountUsable, wasteRisk, discriminatingWindows, pickAccount, NoEnabledAccounts } from "../src/rotate.ts"
 import type { GoAccount } from "../src/types.ts"
 
 function account(key: string): GoAccount {
@@ -11,9 +11,18 @@ function account(key: string): GoAccount {
  * Stub global fetch to serve canned quota responses keyed by API key.
  * Returns a restore function.
  */
-function stubQuota(
-  perKey: Record<string, { weekly: number; weeklyStatus?: string; rolling?: number; fail?: boolean }>,
-): () => void {
+interface QuotaSpec {
+  weekly: number
+  weeklyStatus?: string
+  weeklyResetsAt?: string
+  rolling?: number
+  rollingStatus?: string
+  monthly?: number
+  monthlyResetsAt?: string
+  fail?: boolean
+}
+
+function stubQuota(perKey: Record<string, QuotaSpec>): () => void {
   const original = globalThis.fetch
   globalThis.fetch = (async (url: any, init: any) => {
     const headers = init?.headers instanceof Headers ? init.headers : new Headers(init?.headers)
@@ -24,9 +33,9 @@ function stubQuota(
     if (spec.fail) return new Response("boom", { status: 500 })
     return new Response(JSON.stringify({
       usage: {
-        rolling: { status: "ok", percent: spec.rolling ?? 0, resetsAt: "" },
-        weekly: { status: spec.weeklyStatus ?? "ok", percent: spec.weekly, resetsAt: "" },
-        monthly: { status: "ok", percent: 0, resetsAt: "" },
+        rolling: { status: spec.rollingStatus ?? "ok", percent: spec.rolling ?? 0, resetsAt: "" },
+        weekly: { status: spec.weeklyStatus ?? "ok", percent: spec.weekly, resetsAt: spec.weeklyResetsAt ?? "" },
+        monthly: { status: "ok", percent: spec.monthly ?? 0, resetsAt: spec.monthlyResetsAt ?? "" },
       },
     }), {
       status: 200,
@@ -43,12 +52,12 @@ test("scoreAccount: normal accounts score weekly*10 + rolling", () => {
 
 test("scoreAccount: weekly rate-limited is heavily penalized", () => {
   const q = { fetchedAt: 0, weekly: { status: "rate-limited", percent: 100, resetsAt: "" }, rolling: { status: "ok", percent: 14, resetsAt: "" } } as any
-  assert.equal(scoreAccount(q), 1014)
+  assert.equal(scoreAccount(q), 3014)
 })
 
 test("scoreAccount: weekly >= 100 counts as exhausted even when status is ok", () => {
   const q = { fetchedAt: 0, weekly: { status: "ok", percent: 100, resetsAt: "" }, rolling: { status: "ok", percent: 0, resetsAt: "" } } as any
-  assert.equal(scoreAccount(q), 1000)
+  assert.equal(scoreAccount(q), 3000)
 })
 
 test("scoreAccount: missing quota scores infinity", () => {
@@ -164,6 +173,166 @@ test("pickAccount: round-robin still applies when every lookup fails", async () 
     const r = await pickAccount([account("sk-all-a"), account("sk-all-b")], 0)
     assert.equal(r.index, 1)
     assert.match(r.reason, /round-robin/)
+  } finally {
+    restore()
+  }
+})
+
+// --- 新功能：把「刷新时间」纳入选号 ---------------------------------------------
+// 额度只有在重置前用掉才算数，所以剩余额度越接近重置、越该先用它。
+
+const H = 3_600_000
+const NOW = Date.parse("2026-09-24T03:00:00.000Z")
+const iso = (hoursFromNow: number) => new Date(NOW + hoursFromNow * H).toISOString()
+
+test("wasteRisk: 剩余额度 / 距重置小时数", () => {
+  // 周剩 10%（已用 90），10 小时后重置 -> 1.0/小时
+  assert.equal(wasteRisk({ fetchedAt: 0, weekly: { status: "ok", percent: 90, resetsAt: iso(10) } } as any, NOW), 1)
+})
+
+test("wasteRisk: 取周/月里最大的那个", () => {
+  const q = {
+    fetchedAt: 0,
+    weekly: { status: "ok", percent: 99, resetsAt: iso(100) },   // 1/100 = 0.01
+    monthly: { status: "ok", percent: 50, resetsAt: iso(10) },   // 50/10 = 5
+  } as any
+  assert.equal(wasteRisk(q, NOW), 5)
+})
+
+test("wasteRisk: 滚动窗口不参与（它是限速，不是会被浪费的预算）", () => {
+  const q = { fetchedAt: 0, rolling: { status: "ok", percent: 0, resetsAt: iso(0.1) } } as any
+  assert.equal(wasteRisk(q, NOW), 0)
+})
+
+test("wasteRisk: 查询失败 / 没有 resetsAt / 窗口用满 都算 0", () => {
+  assert.equal(wasteRisk({ error: "HTTP 401", fetchedAt: 0 } as any, NOW), 0)
+  assert.equal(wasteRisk({ fetchedAt: 0, weekly: { status: "ok", percent: 50, resetsAt: "" } } as any, NOW), 0)
+  assert.equal(wasteRisk({ fetchedAt: 0, weekly: { status: "rate-limited", percent: 100, resetsAt: iso(1) } } as any, NOW), 0)
+  assert.equal(wasteRisk(undefined, NOW), 0)
+})
+
+test("wasteRisk: 重置近在眼前时按 15 分钟下限算，不会除出无穷大", () => {
+  const q = { fetchedAt: 0, monthly: { status: "ok", percent: 0, resetsAt: iso(0.001) } } as any
+  assert.equal(wasteRisk(q, NOW), 400)   // 100 / 0.25
+})
+
+test("pickAccount: 优先用「剩余额度快重置」的账号", async () => {
+  // A: 月已用 20%，2 天后重置 -> 风险 80/48 ≈ 1.67（周额度 30 天后才重置，不构成风险）
+  // B: 月 0%，30 天后重置 -> 风险 100/720 ≈ 0.14
+  // 只看额度占比的话 B 更空；加上刷新时间后应该先用 A。
+  const restore = stubQuota({
+    "sk-exp-a": { weekly: 20, weeklyResetsAt: iso(720), monthly: 20, monthlyResetsAt: iso(48) },
+    "sk-exp-b": { weekly: 0, weeklyResetsAt: iso(720), monthly: 0, monthlyResetsAt: iso(720) },
+  })
+  try {
+    const r = await pickAccount([account("sk-exp-a"), account("sk-exp-b")], -1, NOW)
+    assert.equal(r.index, 0, "应先用即将重置额度的账号")
+    assert.equal(r.reason, "expiring-quota")
+  } finally {
+    restore()
+  }
+})
+
+test("pickAccount: 没有 resetsAt 时退回原来的「用得最少」口径", async () => {
+  const restore = stubQuota({
+    "sk-noreset-a": { weekly: 20, monthly: 20 },
+    "sk-noreset-b": { weekly: 0, monthly: 0 },
+  })
+  try {
+    const r = await pickAccount([account("sk-noreset-a"), account("sk-noreset-b")], -1, NOW)
+    assert.equal(r.index, 1, "没有刷新时间信息时按额度占比选")
+    assert.equal(r.reason, "quota-aware")
+  } finally {
+    restore()
+  }
+})
+
+test("pickAccount: 滚动窗口用满的账号即便额度最该先用也不选（现在用不了）", async () => {
+  const restore = stubQuota({
+    "sk-rollfull-a": { weekly: 0, rolling: 100, rollingStatus: "rate-limited", monthly: 20, monthlyResetsAt: iso(1) },
+    "sk-rollfull-b": { weekly: 0, monthly: 0, monthlyResetsAt: iso(720) },
+  })
+  try {
+    const r = await pickAccount([account("sk-rollfull-a"), account("sk-rollfull-b")], -1, NOW)
+    assert.equal(r.index, 1)
+  } finally {
+    restore()
+  }
+})
+
+test("isAccountUsable: 任一窗口用满即不可用；查询失败也算不可用", () => {
+  assert.equal(isAccountUsable({ fetchedAt: 0, weekly: { status: "ok", percent: 1, resetsAt: "" } } as any), true)
+  assert.equal(isAccountUsable({ fetchedAt: 0, rolling: { status: "rate-limited", percent: 100, resetsAt: "" } } as any), false)
+  assert.equal(isAccountUsable({ fetchedAt: 0, monthly: { status: "ok", percent: 100, resetsAt: "" } } as any), false)
+  assert.equal(isAccountUsable({ error: "HTTP 401", fetchedAt: 0 } as any), false)
+})
+
+test("scoreAccount: 三种「用满」的罚分都高于任何健康分数（上限 99*10+99 = 1089）", () => {
+  const healthiestButStillHealthy = scoreAccount({
+    fetchedAt: 0,
+    weekly: { status: "ok", percent: 99, resetsAt: "" },
+    rolling: { status: "ok", percent: 99, resetsAt: "" },
+  } as any)
+  assert.equal(healthiestButStillHealthy, 1089)
+  const full = (window: string) => scoreAccount({ fetchedAt: 0, [window]: { status: "ok", percent: 100, resetsAt: "" } } as any)
+  assert.ok(full("rolling") > healthiestButStillHealthy)
+  assert.ok(full("weekly") > full("rolling"), "周额度恢复更慢，罚分应更重")
+  assert.ok(full("monthly") > full("weekly"), "月额度恢复最慢，罚分应最重")
+})
+
+test("discriminatingWindows: 只保留各账号重置时间不同的窗口", () => {
+  const sharedWeekly = [
+    { fetchedAt: 0, weekly: { status: "ok", percent: 1, resetsAt: iso(93) }, monthly: { status: "ok", percent: 90, resetsAt: iso(27) } },
+    { fetchedAt: 0, weekly: { status: "ok", percent: 1, resetsAt: iso(93) }, monthly: { status: "ok", percent: 0, resetsAt: iso(703) } },
+  ] as any
+  assert.deepEqual(discriminatingWindows(sharedWeekly), ["monthly"], "周额度是共同边界，不该参与")
+  assert.deepEqual(discriminatingWindows([sharedWeekly[0], sharedWeekly[0]]), [], "全都一样时没有可区分的信息")
+  assert.deepEqual(discriminatingWindows([sharedWeekly[0]]), [], "只有一个候选时无需区分")
+})
+
+test("pickAccount: 共同的重置边界不驱动选择，退回额度占比", async () => {
+  // 周额度对两个账号同时重置（iso(10)），月额度信息相同 -> 没有差异化浪费
+  // A 周已用 20%（更满）应让位给 B，而不是因为「A 的额度也在 10h 后重置」而选 A。
+  const restore = stubQuota({
+    "sk-shared-a": { weekly: 20, weeklyResetsAt: iso(10), monthly: 0, monthlyResetsAt: iso(700) },
+    "sk-shared-b": { weekly: 0, weeklyResetsAt: iso(10), monthly: 0, monthlyResetsAt: iso(700) },
+  })
+  try {
+    const r = await pickAccount([account("sk-shared-a"), account("sk-shared-b")], -1, NOW)
+    assert.equal(r.index, 1)
+    assert.equal(r.reason, "quota-aware")
+  } finally {
+    restore()
+  }
+})
+
+test("pickAccount: 重置时间一旦不同，同样的数据就会翻转结果", async () => {
+  // 与上一个用例唯一的差别：A 的周额度 10h 后重置、B 的 100h 后 -> A 的风险 80/10 = 8 > B 的 1
+  const restore = stubQuota({
+    "sk-diff-a": { weekly: 20, weeklyResetsAt: iso(10), monthly: 0, monthlyResetsAt: iso(700) },
+    "sk-diff-b": { weekly: 0, weeklyResetsAt: iso(100), monthly: 0, monthlyResetsAt: iso(700) },
+  })
+  try {
+    const r = await pickAccount([account("sk-diff-a"), account("sk-diff-b")], -1, NOW)
+    assert.equal(r.index, 0, "A 的剩余额度更快作废，应先用 A")
+    assert.equal(r.reason, "expiring-quota")
+  } finally {
+    restore()
+  }
+})
+
+test("pickAccount: 实盘形态——周额度共同边界 + 月额度各异，由月额度决定", async () => {
+  // 实测 2026-09-24：账号2 月剩 7%（27.4h 后重置）、账号3 月剩 100%（703h）；
+  // 两者周额度同一时刻（92.9h）重置。旧口径选账号3（分数 14 < 126），
+  // 新口径应先用账号2——它那 7% 明天就作废了。
+  const restore = stubQuota({
+    "sk-live-2": { weekly: 11, weeklyResetsAt: iso(92.9), monthly: 93, monthlyResetsAt: iso(27.4) },
+    "sk-live-3": { weekly: 1, weeklyResetsAt: iso(92.9), monthly: 0, monthlyResetsAt: iso(703.4) },
+  })
+  try {
+    const r = await pickAccount([account("sk-live-2"), account("sk-live-3")], 1, NOW)
+    assert.equal(r.index, 0, "应先烧掉即将作废的月额度")
+    assert.equal(r.reason, "expiring-quota")
   } finally {
     restore()
   }

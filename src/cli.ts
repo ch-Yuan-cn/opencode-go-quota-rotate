@@ -10,7 +10,7 @@ const program = new Command()
 program
   .name("opencode-go-quota-rotate")
   .description("Manage OpenCode Go multi-account quota rotation")
-  .version("0.1.0")
+  .version("0.2.0")
 
 function maskKey(key: string): string {
   if (key.length <= 10) return key

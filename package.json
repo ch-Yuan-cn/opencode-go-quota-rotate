@@ -1,6 +1,6 @@
 {
   "name": "opencode-go-quota-rotate",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Quota-aware multi-account rotation for the OpenCode Go subscription. Monitors live per-account usage and fails over automatically when an account hits its quota.",
   "type": "module",
   "main": "./dist/index.js",

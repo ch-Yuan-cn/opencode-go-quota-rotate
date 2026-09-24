@@ -107,19 +107,44 @@ Example output:
 
 On every session the loader queries the OpenCode Go usage API
 (`GET https://opencode.ai/zen/go/v1/usage`, the same endpoint used by
-`@slkiser/opencode-quota`, so both can coexist) for each enabled key and
-scores them:
+`@slkiser/opencode-quota`, so both can coexist) for each enabled key and picks
+an account in two steps:
 
-- `score = weekly.percent * 10 + rolling.percent`
-- a rate-limited (or 100%) weekly window is heavily penalized
-  (`1000 + rolling.percent`)
-- the lowest score wins; ties break in rotation order
-- if the usage API is unreachable, selection falls back to plain round-robin
+1. **Only usable accounts are candidates.** An account with any window already
+   full (`rate-limited` or 100% used) cannot serve a request now, so it is only
+   used when no account is usable at all.
+2. **Expiring allowance first.** Quota only counts if it is spent before its
+   window resets, so the account whose remaining allowance is about to be reset
+   is preferred over one that has a whole window left:
 
-Mid-session, if the active account returns HTTP 429 — or a 402/403/409/5xx
-whose body mentions rate limits, quota, or insufficient balance — the account
-is marked exhausted and the same request is retried with the next account.
-When every account is exhausted, a synthetic 429 is returned.
+   ```
+   wasteRisk = headroom% / hours until reset
+   ```
+
+   Highest `wasteRisk` wins. Ties — and the "no reset information" case — fall
+   back to the scarcity score: `weekly.percent * 10 + rolling.percent`, lowest
+   first, then rotation order. A full window scores 2000 (rolling) / 3000
+   (weekly) / 4000 (monthly) plus `rolling.percent`, so a full window can never
+   outrank a usable account.
+
+Only **allowance** windows feed `wasteRisk`: the rolling window is a rate limit
+(~5h, and it slides forward whether or not you use it), so unused rolling quota
+is never "lost". Of the weekly and monthly windows, only one whose reset
+**differs between candidates** can order them — a shared boundary wastes
+everyone's unused headroom at the same instant, so it cannot make one account
+more urgent than another. Measured live on 2026-09-24, the weekly window is a
+shared calendar boundary (Monday 00:00 UTC for every account) while the monthly
+window follows each account's own subscription date, so in practice the monthly
+window decides.
+
+If the usage API is unreachable for every account, selection falls back to plain
+round-robin.
+
+Mid-session, if the active account returns HTTP 429, HTTP 401 (key revoked or
+invalid), or a 402/403/409/5xx whose body mentions rate limits, quota, or
+insufficient balance, the account is marked exhausted and the same request is
+retried with the next account. When every account is exhausted, a synthetic 429
+is returned.
 
 ## Storage
 
