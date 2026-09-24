@@ -6,3 +6,6 @@ dist/
 .env
 .env.*
 coverage/
+
+# 本地工作记录：含本机路径与账号 key 前缀，不进公开仓库
+SESSION_RECORD.md
