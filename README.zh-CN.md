@@ -149,6 +149,8 @@ Remove this account? [y/N]
 | `~/.config/opencode/opencode-go-quota-rotation.json` | 最近使用的账号位置 |
 | `~/.config/opencode/opencode-go-quota-rotate.log` | 插件运行日志（选号结果、切换记录等） |
 
+日志位置可用环境变量 `OPENCODE_GO_LOG_FILE` 重定向；测试进程里默认不写日志（`node --test` 会给子进程设 `NODE_TEST_CONTEXT`），所以跑 `npm test` 不会污染你本机的日志文件。
+
 ## 排错
 
 - **插件似乎没生效**：先 `opencode debug config` 确认插件路径在列表里；再确认 auth.json 有 `opencode-go` 条目；最后看日志文件里有没有 `loader active` 记录。

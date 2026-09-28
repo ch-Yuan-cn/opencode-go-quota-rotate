@@ -170,6 +170,10 @@ is returned.
 | `~/.config/opencode/opencode-go-quota-rotation.json` | Last used account index |
 | `~/.config/opencode/opencode-go-quota-rotate.log` | Plugin activity log |
 
+The log location can be redirected with `OPENCODE_GO_LOG_FILE`. Inside a test
+process the plugin logs nothing at all — `node --test` marks its children with
+`NODE_TEST_CONTEXT` — so `npm test` never appends to your local log file.
+
 ## License
 
 MIT

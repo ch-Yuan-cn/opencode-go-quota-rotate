@@ -12,7 +12,7 @@ const program = new Command()
 program
   .name("opencode-go-quota-rotate")
   .description("Manage OpenCode Go multi-account quota rotation")
-  .version("0.3.0")
+  .version("0.3.1")
 
 function windowLine(name: string, w: { status?: string; percent?: number; resetsAt?: string } | undefined): string {
   if (!w) return "  " + name + ": n/a"
