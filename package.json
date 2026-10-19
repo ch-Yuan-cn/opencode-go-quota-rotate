@@ -1,7 +1,7 @@
 {
   "name": "opencode-go-quota-rotate",
-  "version": "0.3.1",
-  "description": "Quota-aware multi-account rotation for the OpenCode Go subscription. Monitors live per-account usage and fails over automatically when an account hits its quota.",
+  "version": "0.4.0",
+  "description": "Quota-aware multi-account rotation for the OpenCode Go subscription, for OpenCode and Pi. Monitors live per-account usage and fails over automatically when an account hits its quota.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -23,6 +23,7 @@
   ],
   "scripts": {
     "build": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/index.js && esbuild src/cli.ts --bundle --platform=node --format=cjs --outfile=dist/cli.cjs",
+    "build:pi": "esbuild src/pi-extension.ts --bundle --platform=node --format=esm --outfile=dist/pi-extension.js --external:@earendil-works/*",
     "typecheck": "tsc --noEmit",
     "test": "node --test"
   },
@@ -39,6 +40,8 @@
     "@opencode-ai/plugin": "*"
   },
   "devDependencies": {
+    "@earendil-works/pi-ai": "^1.3.0",
+    "@earendil-works/pi-coding-agent": "^1.3.0",
     "@opencode-ai/plugin": "^1.18.23",
     "@types/node": "^22.0.0",
     "esbuild": "^0.24.0",

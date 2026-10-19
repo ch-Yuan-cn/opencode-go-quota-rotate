@@ -52,7 +52,7 @@ export type AllowanceWindow = (typeof ALLOWANCE_WINDOWS)[number]
 const MIN_HOURS_TO_RESET = 0.25
 
 /** Two wasteRisk values within this are treated as equal, so float noise cannot flip the pick. */
-const RISK_EPSILON = 1e-6
+export const RISK_EPSILON = 1e-6
 
 const ROLLING_FULL_PENALTY = 2000
 const WEEKLY_FULL_PENALTY = 3000

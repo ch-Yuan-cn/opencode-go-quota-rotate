@@ -16,12 +16,17 @@ Coverage:
 - `storage.ts` — accounts file read/write and corruption handling
 - `logger.ts` — log routing (see below)
 - `confirm.ts` / `display.ts` — the `remove` confirmation prompt
+- `pi.ts` — Pi adapter: failure classification (quota vs auth vs
+  non-rotatable), cooldown ordering, account loading, pool reporting
 
 ## Tests must not touch real files
 
 Nothing here may read or write the user's `~/.config/opencode`. Tests achieve
 that by pointing `process.env.HOME` at a temporary directory (`storage.test.ts`
 does this per test) or `OPENCODE_GO_LOG_FILE` at a temp file (`logger.test.ts`).
+
+The Pi adapter's quota lookup is injectable (`setQuotaLookup`); every ranking
+test installs a fixture, so selection never reaches the network either.
 
 `src/logger.ts` additionally refuses to log at all inside a test process —
 `node --test` marks its children with `NODE_TEST_CONTEXT`, and that check is what

@@ -141,6 +141,35 @@ Remove this account? [y/N]
 
 所有账号都用尽时，会返回一个合成的 429 响应，并记录日志。
 
+## 用在 Pi 上
+
+同一套额度感知选号也能驱动 [Pi](https://pi.dev)：仓库里带一个 Pi 扩展，
+注册 `opencode-pool` 这个 provider。它直接复用 `src/rotate.ts` 和
+`src/quota.ts`，所以两个 agent 的选号结果一致。
+
+```sh
+npm run build:pi
+cp dist/pi-extension.js ~/.pi/agent/extensions/opencode-pool.js
+```
+
+装完在 Pi 里输入 `/model`，选 `opencode-pool/` 开头的模型；`/pool` 看账号池状态，
+`/pool reset` 清空冷却与额度缓存。
+
+为什么需要这层适配：Pi 内置的 `opencode-go` provider 只在启动时认一个 key，
+而且 Pi 把 Go 的额度错误（`GoUsageLimitError`、`Monthly usage limit reached`）
+判定为**不可重试**，所以它自带的自动重试永远不会换号。这个扩展包住 Pi 的四种内置
+API 实现（`anthropic-messages`、`openai-completions`、`openai-responses`、
+`google-generative-ai`），每次请求自己挑 key，遇到额度或凭证类失败就在同一个请求内换号。
+
+跟 OpenCode 插件的区别：
+
+- 冷却和额度缓存**只在内存里**，Pi 退出就清空。账号文件仍然是共用的，在任一侧
+  增删或停用账号，另一侧立刻可见。
+- 打包产物是**单文件自足**的（`@earendil-works/*` 保持外部依赖，由 Pi 自己解析）。
+  用法是复制，不要建符号链接。
+- 地区限制（403 `unsupported_country_region_territory`）、上下文超长、
+  隐私设置拒绝**不会**换号——换个账号也撞同一堵墙。
+
 ## 文件说明
 
 | 文件 | 作用 |

@@ -72,6 +72,49 @@ Accept: application/json
 
 `percent` is the used percentage (0–100); `status` is `ok` or `rate-limited`.
 
+## Pi adapter
+
+`src/pi.ts` holds the host-neutral half (account loading, quota caching, failure
+classification, cooldown, ranking); `src/pi-extension.ts` is the thin Pi binding
+that registers the `opencode-pool` provider and the `/pool` command.
+
+```
+┌──────────────────────┐
+│ pi-extension.ts      │  Pi extension API: registerProvider, /pool
+└──────────┬───────────┘
+           │
+┌──────────▼───────────┐
+│ pi.ts                │  accounts · quota cache · classifyFailure · cooldown
+└────┬────────────┬────┘
+     │            │
+┌────▼─────┐ ┌────▼────┐
+│ rotate.ts│ │ quota.ts│  shared with the OpenCode plugin
+└──────────┘ └─────────┘
+```
+
+Two Pi-specific constraints shape this split:
+
+1. **Pi loads extension files directly with jiti.** It cannot resolve this
+   repository's `src/*.ts`, so `npm run build:pi` bundles everything into one
+   file. `@earendil-works/*` stays external: Pi resolves those from its own
+   install.
+2. **The per-API stream wrappers live on the compat entrypoint.** The root
+   `@earendil-works/pi-ai` entrypoint exports only `lazyApi`/`lazyStream`;
+   `anthropicMessagesApi` and friends come from `@earendil-works/pi-ai/compat`.
+
+Rotation happens before the first stream event is yielded. Once any content has
+reached the caller, a failure is surfaced as-is: replaying the request would
+duplicate output.
+
+The quota lookup is injectable (`setQuotaLookup`) so tests never reach the
+network.
+
+### Build
+
+```
+npm run build:pi   # -> dist/pi-extension.js (self-contained, copy into Pi)
+```
+
 ## Build
 
 The plugin entry is bundled to a single ESM file (`dist/index.js`); the CLI is

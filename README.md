@@ -162,6 +162,39 @@ insufficient balance, the account is marked exhausted and the same request is
 retried with the next account. When every account is exhausted, a synthetic 429
 is returned.
 
+## Pi coding agent
+
+The same quota-aware selection also drives [Pi](https://pi.dev) through an
+extension that registers an `opencode-pool` provider. It reuses
+`src/rotate.ts` and `src/quota.ts`, so both agents rank accounts identically.
+
+```sh
+npm run build:pi
+cp dist/pi-extension.js ~/.pi/agent/extensions/opencode-pool.js
+```
+
+Then in Pi run `/model` and pick a model under `opencode-pool/`; `/pool` prints
+the pool, and `/pool reset` clears cooldowns and the quota cache.
+
+Why an adapter is needed: Pi's built-in `opencode-go` provider resolves one key
+at startup, and Pi classifies Go usage limits (`GoUsageLimitError`,
+`Monthly usage limit reached`) as **non-retryable**, so its automatic retry never
+rotates accounts. The extension wraps the four built-in API implementations
+(`anthropic-messages`, `openai-completions`, `openai-responses`,
+`google-generative-ai`) and rewrites the credential per request, rotating inside
+the same request when the failure is quota- or credential-related.
+
+Differences from the OpenCode plugin:
+
+- Rotation is **in-memory**: cooldowns and the quota cache reset when Pi exits.
+  The accounts file stays shared, so adding or disabling an account is visible
+  to both agents immediately.
+- The bundled extension is a single self-contained file (`@earendil-works/*`
+  imports stay external and resolve inside Pi). Copy it; do not symlink it.
+- Region restrictions (403 `unsupported_country_region_territory`), context
+  overflow, and privacy-setting rejections do **not** rotate — another account
+  would hit the same wall.
+
 ## Storage
 
 | File | Purpose |

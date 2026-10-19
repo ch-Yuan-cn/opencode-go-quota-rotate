@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "accounts": [
+    { "apiKey": "key-账号1", "label": "账号1", "addedAt": 0, "enabled": true },
+    { "apiKey": "key-账号2", "label": "账号2", "addedAt": 0, "enabled": true },
+    { "apiKey": "key-账号3", "label": "账号3", "addedAt": 0, "enabled": false }
+  ],
+  "rotationIndex": 0
+}
