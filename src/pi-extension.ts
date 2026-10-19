@@ -180,6 +180,45 @@ export default function (pi: ExtensionAPI): void {
     }),
   )
 
+  /**
+   * `settings.json` cannot point `defaultProvider` at this provider: Pi resolves
+   * the startup model before extensions have registered their providers, so the
+   * lookup misses and Pi silently falls back to a built-in provider default.
+   *
+   * Close that gap here. Only act when the user actually configured this
+   * provider as the default, and only on a fresh start or a brand-new session —
+   * never on resume/fork, where the recorded model is the user's own choice.
+   */
+  pi.on("session_start", async (event, ctx) => {
+    if (event.reason !== "startup" && event.reason !== "new") return
+
+    const settings = pi.getSettings() as {
+      defaultProvider?: string
+      defaultModel?: string
+      defaultThinkingLevel?: string
+    }
+    if (settings.defaultProvider !== PI_PROVIDER_ID) return
+    if (ctx.model?.provider === PI_PROVIDER_ID) return
+
+    const modelId = settings.defaultModel
+    const target = modelId ? ctx.modelRegistry.find(PI_PROVIDER_ID, modelId) : undefined
+    if (!target) {
+      ctx.ui.notify(
+        `opencode-pool：settings.json 指定的默认模型 ${modelId ?? "(未设)"} 不在账号池目录里，保持当前模型`,
+        "warning",
+      )
+      return
+    }
+
+    if (!(await pi.setModel(target))) {
+      ctx.ui.notify("opencode-pool：默认模型切换失败（账号池未就绪），保持当前模型", "warning")
+      return
+    }
+
+    const level = settings.defaultThinkingLevel
+    if (level) pi.setThinkingLevel(level as Parameters<typeof pi.setThinkingLevel>[0])
+  })
+
   pi.registerCommand("pool", {
     description: "查看 OpenCode Go 账号池状态；`/pool reset` 清空冷却与额度缓存",
     handler: async (args, ctx) => {

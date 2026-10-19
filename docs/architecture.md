@@ -109,6 +109,21 @@ duplicate output.
 The quota lookup is injectable (`setQuotaLookup`) so tests never reach the
 network.
 
+### Startup default model
+
+`settings.json` cannot reliably point `defaultProvider` at an
+extension-registered provider: `createAgentSession()` resolves the startup model
+with `findInitialModel()` before the extension runner binds its context, so the
+provider lookup misses and Pi falls back to a built-in provider default without
+any error. The extension closes that gap on `session_start`:
+
+- acts only for `reason` `startup` / `new`, so `resume` and `fork` keep the model
+  recorded in the session (that is the user's own choice);
+- acts only when `settings.defaultProvider` names this provider, so it never
+  overrides a different configured default;
+- on a missing model or a not-ready pool it notifies and leaves the current model
+  in place instead of failing the session.
+
 ### Build
 
 ```

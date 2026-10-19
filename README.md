@@ -176,6 +176,23 @@ cp dist/pi-extension.js ~/.pi/agent/extensions/opencode-pool.js
 Then in Pi run `/model` and pick a model under `opencode-pool/`; `/pool` prints
 the pool, and `/pool reset` clears cooldowns and the quota cache.
 
+To make the pool the startup default, set these in `~/.pi/agent/settings.json`:
+
+```json
+{
+  "defaultProvider": "opencode-pool",
+  "defaultModel": "deepseek-v4.1-flash",
+  "defaultThinkingLevel": "high"
+}
+```
+
+Pi resolves the startup model *before* extensions register their providers, so
+`defaultProvider` alone would silently fall back to a built-in provider. The
+extension therefore re-applies the configured default on `session_start`
+(`startup` and `new` only; resume and fork keep the model recorded in the
+session). If the model is missing or the pool is not ready, Pi keeps its current
+model and the extension says so instead of failing the session.
+
 Why an adapter is needed: Pi's built-in `opencode-go` provider resolves one key
 at startup, and Pi classifies Go usage limits (`GoUsageLimitError`,
 `Monthly usage limit reached`) as **non-retryable**, so its automatic retry never

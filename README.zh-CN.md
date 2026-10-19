@@ -155,6 +155,21 @@ cp dist/pi-extension.js ~/.pi/agent/extensions/opencode-pool.js
 装完在 Pi 里输入 `/model`，选 `opencode-pool/` 开头的模型；`/pool` 看账号池状态，
 `/pool reset` 清空冷却与额度缓存。
 
+要让账号池成为开机默认，在 `~/.pi/agent/settings.json` 里写：
+
+```json
+{
+  "defaultProvider": "opencode-pool",
+  "defaultModel": "deepseek-v4.1-flash",
+  "defaultThinkingLevel": "high"
+}
+```
+
+注意：Pi 解析启动模型的时候，扩展还没注册好 provider，所以只写 `defaultProvider`
+会静默退回内置 provider 的默认模型。扩展因此在 `session_start` 时重新应用一次配置的默认值
+（只对 `startup` 和 `new` 生效；`resume` 和 `fork` 保留会话里记录的那个模型，那是用户自己的选择）。
+模型不在目录里或账号池没就绪时，Pi 保持当前模型，扩展会明确提示，而不是让会话失败。
+
 为什么需要这层适配：Pi 内置的 `opencode-go` provider 只在启动时认一个 key，
 而且 Pi 把 Go 的额度错误（`GoUsageLimitError`、`Monthly usage limit reached`）
 判定为**不可重试**，所以它自带的自动重试永远不会换号。这个扩展包住 Pi 的四种内置
